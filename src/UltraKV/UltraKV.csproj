@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+
+
+		
+		<TargetFramework>net8.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="BouncyCastle.Cryptography" Version="2.6.1" />
+		<PackageReference Include="EasyCompressor.LZ4" Version="2.1.0" />
+		<PackageReference Include="EasyCompressor.LZMA" Version="2.1.0" />
+		<PackageReference Include="EasyCompressor.Snappier" Version="2.1.0" />
+		<PackageReference Include="EasyCompressor.ZstdSharp" Version="2.1.0" />
+		<PackageReference Include="System.IO.Hashing" Version="9.0.5" />
+		<PackageReference Include="Blake3" Version="2.0.0" />
+	</ItemGroup>
+</Project>
