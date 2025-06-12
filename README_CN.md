@@ -13,6 +13,19 @@
 
 </div>
 
+## 🎯 极简代码，极致性能
+
+<div align="center">
+
+### **🚀 不到 1000 行代码实现完整数据库引擎**
+
+*证明简洁与性能可以完美共存*
+
+</div>
+
+**UltraKV** 最令人惊叹的特点之一是用极其紧凑的代码库实现了企业级数据库性能。整个 **UltraKV** 引擎核心仅用 **不到 1000 行 C# 代码** 实现，充分展现了专注、高效设计的强大威力。
+
+
 ## 安装使用
 
 ```bash
@@ -719,13 +732,6 @@ dotnet build --configuration Release
 - 📧 [邮件列表](mailto:ultrakv@trueai.org) - 官方公告和更新
 - 🐛 [问题跟踪](https://github.com/trueai-org/UltraKV/issues) - Bug 报告和功能请求
 - 📖 [Wiki](https://github.com/trueai-org/UltraKV/wiki) - 详细文档和教程
-
-## 📄 参考
-
-- https://github.com/CoreyKaylor/Lightning.NET
-- https://github.com/jgric2/Fast-Persistent-Dictionary
-- https://github.com/microsoft/FASTER
-- https://github.com/hhblaze/DBreeze
 
 ## 📄 许可证
 

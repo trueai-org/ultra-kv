@@ -13,6 +13,19 @@
 
 </div>
 
+## 🎯 Minimal Code, Maximum Performance
+
+<div align="center">
+
+### **🚀 Less than 1,000 Lines of Code for a Complete Database Engine**
+
+*Proving that simplicity and performance can coexist*
+
+</div>
+
+One of the most remarkable aspects of **UltraKV** is achieving enterprise-grade database performance with an incredibly compact codebase. The entire **UltraKV** engine core is implemented in **less than 1,000 lines of C# code**, demonstrating the power of focused, efficient design.
+
+
 ## Installation
 
 ```bash
@@ -695,6 +708,25 @@ This project references the following excellent open-source projects:
 
 > *Performance data based on benchmark tests on the same hardware environment. Actual performance varies by environment*
 
+
+## 📈 Roadmap
+
+### 🎯 Near-term Goals (v1.1)
+- [ ] Distributed support and cluster mode
+- [ ] More compression algorithm support
+- [ ] Performance monitoring and metrics export
+- [ ] Database repair tools
+
+### 🚀 Mid-term Goals (v2.0)
+- [ ] Support for complex queries and indexing
+- [ ] Plugin-based storage backends
+- [ ] Cloud-native support
+- [ ] Graphical management interface
+
+### 🌟 Long-term Goals (v3.0)
+- [ ] Machine learning optimized performance tuning
+- [ ] Automated operations and fault recovery
+- [ ] Cross-platform mobile support
 
 ## 📱 Community and Support
 
