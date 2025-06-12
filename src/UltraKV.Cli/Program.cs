@@ -500,7 +500,7 @@ namespace UltraKV.Cli
             {
                 try
                 {
-                    //Directory.Delete(dataDir, true);
+                    Directory.Delete(dataDir, true);
                     Thread.Sleep(100); // 等待文件系统释放句柄
                 }
                 catch { }
@@ -510,7 +510,7 @@ namespace UltraKV.Cli
             // 使用示例
             var config = new UltraKVConfig()
             {
-                MemoryModeEnabled = true,
+                MemoryModeEnabled = false,
 
                 //WriteBufferSizeKB = 256,
                 //HashType = HashType.SHA256,
@@ -531,27 +531,44 @@ namespace UltraKV.Cli
 
             using var engine = new UltraKVEngine<string, string>(Path.Combine(dataDir, "test.db"), config);
 
-            var sw = new Stopwatch();
-            sw.Start();
 
-            //engine.Put($"k", $"v");
-
-            var count = 100000;
-
-            for (int i = 0; i < count; i++)
+            for (int j = 0; j < 5; j++)
             {
-                engine.Put($"k{i}", $"v222222222{i}");
+                var sw = new Stopwatch();
+                sw.Start();
 
-                //if (i % 100 == 0)
-                //{
-                //    engine.Flush();
+                //engine.Put($"k", $"v");
 
-                //    //Thread.Sleep(10);
-                //}
+                var count = 100000;
+
+                for (int i = 0; i < count; i++)
+                {
+                    engine.Put($"k{i}", $"{i}");
+
+                    //if (i % 100 == 0)
+                    //{
+                    //    engine.Flush();
+
+                    //    //Thread.Sleep(10);
+                    //}
+                }
+
+                engine.Flush();
+
+                sw.Stop();
+
+                engine.Clear();
+
+                engine.Flush();
+
+                // 计算每秒速度
+                var opsPerSec = count * 1000.0 / sw.ElapsedMilliseconds;
+
+                Console.WriteLine($"Inserted {count} records in {sw.ElapsedMilliseconds}ms");
+                Console.WriteLine($"Insert Performance: {opsPerSec:N0} ops/sec");
             }
 
-            engine.Flush();
-
+            engine.Dispose();
 
             //engine.Delete($"k2");
 
@@ -574,15 +591,6 @@ namespace UltraKV.Cli
             //engine.Compact(true);
 
 
-            sw.Stop();
-
-            engine.Dispose();
-
-            // 计算每秒速度
-            var opsPerSec = count * 1000.0 / sw.ElapsedMilliseconds;
-
-            Console.WriteLine($"Inserted {count} records in {sw.ElapsedMilliseconds}ms");
-            Console.WriteLine($"Insert Performance: {opsPerSec:N0} ops/sec");
 
 
 
