@@ -683,8 +683,8 @@ public class UltraKVCache : IMemoryCache
 
 ```bash
 # 1. Fork 并克隆项目
-git clone https://github.com/your-username/UltraKV.git
-cd UltraKV
+https://github.com/trueai-org/ultra-kv.git
+cd ultra-kv
 
 # 2. 安装依赖
 dotnet restore
@@ -737,10 +737,10 @@ dotnet build --configuration Release
 
 ## 📱 社区和支持
 
-- 💬 [讨论区](https://github.com/trueai-org/UltraKV/discussions) - 技术讨论和问答
+- 💬 [讨论区](https://github.com/trueai-org/ultra-kv/discussions) - 技术讨论和问答
 - 📧 [邮件列表](mailto:ultrakv@trueai.org) - 官方公告和更新
-- 🐛 [问题跟踪](https://github.com/trueai-org/UltraKV/issues) - Bug 报告和功能请求
-- 📖 [Wiki](https://github.com/trueai-org/UltraKV/wiki) - 详细文档和教程
+- 🐛 [问题跟踪](https://github.com/trueai-org/ultra-kv/issues) - Bug 报告和功能请求
+- 📖 [Wiki](https://github.com/trueai-org/ultra-kv/wiki) - 详细文档和教程
 
 ## 📄 许可证
 
@@ -752,10 +752,10 @@ dotnet build --configuration Release
 
 **⭐ 如果这个项目对您有帮助，请给我们一个 Star！⭐**
 
-[🏠 首页](https://github.com/trueai-org/UltraKV) • 
-[📚 文档](https://github.com/trueai-org/UltraKV/wiki) • 
-[🐛 报告问题](https://github.com/trueai-org/UltraKV/issues) • 
-[💡 功能请求](https://github.com/trueai-org/UltraKV/issues/new?template=feature_request.md)
+[🏠 首页](https://github.com/trueai-org/ultra-kv) • 
+[📚 文档](https://github.com/trueai-org/ultra-kv/wiki) • 
+[🐛 报告问题](https://github.com/trueai-org/ultra-kv/issues) • 
+[💡 功能请求](https://github.com/trueai-org/ultra-kv/issues/new?template=feature_request.md)
 
 Copyright © 2024 TrueAI.org. All rights reserved.
 

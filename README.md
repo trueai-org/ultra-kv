@@ -685,8 +685,8 @@ We welcome feature suggestions! Please describe in detail in the issue:
 
 ```bash
 # 1. Fork and clone the project
-git clone https://github.com/your-username/UltraKV.git
-cd UltraKV
+https://github.com/trueai-org/ultra-kv.git
+cd ultra-kv
 
 # 2. Install dependencies
 dotnet restore
@@ -740,10 +740,10 @@ This project references the following excellent open-source projects:
 
 ## 📱 Community and Support
 
-- 💬 [Discussions](https://github.com/trueai-org/UltraKV/discussions) - Technical discussions and Q&A
+- 💬 [Discussions](https://github.com/trueai-org/ultra-kv/discussions) - Technical discussions and Q&A
 - 📧 [Mailing List](mailto:ultrakv@trueai.org) - Official announcements and updates
-- 🐛 [Issue Tracker](https://github.com/trueai-org/UltraKV/issues) - Bug reports and feature requests
-- 📖 [Wiki](https://github.com/trueai-org/UltraKV/wiki) - Detailed documentation and tutorials
+- 🐛 [Issue Tracker](https://github.com/trueai-org/ultra-kv/issues) - Bug reports and feature requests
+- 📖 [Wiki](https://github.com/trueai-org/ultra-kv/wiki) - Detailed documentation and tutorials
 
 ## 📄 License
 
@@ -755,10 +755,10 @@ This project is licensed under the [MIT License](LICENSE).
 
 **⭐ If this project helps you, please give us a Star! ⭐**
 
-[🏠 Home](https://github.com/trueai-org/UltraKV) • 
-[📚 Documentation](https://github.com/trueai-org/UltraKV/wiki) • 
-[🐛 Report Issues](https://github.com/trueai-org/UltraKV/issues) • 
-[💡 Feature Requests](https://github.com/trueai-org/UltraKV/issues/new?template=feature_request.md)
+[🏠 Home](https://github.com/trueai-org/ultra-kv) • 
+[📚 Documentation](https://github.com/trueai-org/ultra-kv/wiki) • 
+[🐛 Report Issues](https://github.com/trueai-org/ultra-kv/issues) • 
+[💡 Feature Requests](https://github.com/trueai-org/ultra-kv/issues/new?template=feature_request.md)
 
 Copyright © 2024 TrueAI.org. All rights reserved.
 
