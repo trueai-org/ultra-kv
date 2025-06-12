@@ -13,6 +13,17 @@
 
 </div>
 
+## 安装使用
+
+```bash
+dotnet add package UltraKV
+
+using var engine = new UltraKVEngine<string, string>("test.db");
+engine.Set("key1", "value1");
+var value = engine.Get("key1");
+engine.Delete("key1")
+```
+
 ## 📋 目录
 
 - [🌟 项目概述](#-项目概述)

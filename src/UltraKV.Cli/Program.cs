@@ -19,7 +19,7 @@ namespace UltraKV.Cli
             {
                 try
                 {
-                    Directory.Delete(dataDir, true);
+                    //Directory.Delete(dataDir, true);
                     Thread.Sleep(100); // 等待文件系统释放句柄
                 }
                 catch { }

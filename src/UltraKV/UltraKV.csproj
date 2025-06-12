@@ -1,16 +1,30 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<OutputType>Exe</OutputType>
-
-
-		
 		<TargetFramework>net8.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+
+		<!-- NuGet 包信息 -->
+		<PackageId>UltraKV</PackageId>
+		<Version>1.0.0</Version>
+		<Authors>trueai-org</Authors>
+		<Description>Single File Lightning-Fast Key-Value Storage Engine</Description>
+		<PackageTags>key-value;storage;database;nosql;embedded</PackageTags>
+		<RepositoryUrl>https://github.com/trueai-org/ultra-kv</RepositoryUrl>
+		<PackageProjectUrl>https://github.com/trueai-org/ultra-kv</PackageProjectUrl>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		<PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
 	</PropertyGroup>
 
+	<ItemGroup>
+		<None Include="README.md" Pack="true" PackagePath="\" />
+	</ItemGroup>
+	
 	<ItemGroup>
 		<PackageReference Include="BouncyCastle.Cryptography" Version="2.6.1" />
 		<PackageReference Include="EasyCompressor.LZ4" Version="2.1.0" />
