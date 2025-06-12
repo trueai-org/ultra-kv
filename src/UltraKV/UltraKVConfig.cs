@@ -8,12 +8,27 @@ public class UltraKVConfig
     /// <summary>
     /// 是否开启内存模式，开启内存模式时，读/写将会直接从内存中获取数据，而不是从磁盘读取，数据将全部加载到内存中
     /// </summary>
-    public bool EnableMemoryMode { get; set; } = false;
+    public bool MemoryModeEnabled { get; set; } = false;
+
+    /// <summary>
+    /// 内存模式内存最大限制 MB
+    /// </summary>
+    public int MemoryModeMaxSizeMB { get; set; } = 1024;
+
+    /// <summary>
+    /// 内存模式默认缓存时间，单位：秒
+    /// </summary>
+    public int MemoryModeDefaultCacheTimeSeconds { get; set; } = 3600;
+
+    /// <summary>
+    /// 内存模式是否启用懒加载
+    /// </summary>
+    public bool MemoryModeLazyLoadEnabled { get; set; } = false;
 
     /// <summary>
     /// 是否开启更新验证，每次更新完成后校验值是否正确，默认 false，一般开发时使用
     /// </summary>
-    public bool EnableUpdateValidation { get; set; } = false;
+    public bool UpdateValidationEnabled { get; set; } = false;
 
     /// <summary>
     /// 限制 Key 的最大长度配置
@@ -86,7 +101,7 @@ public class UltraKVConfig
     /// <summary>
     /// 是否启用写入缓冲机制，默认启用
     /// </summary>
-    public bool EnableWriteBuffer { get; set; } = true;
+    public bool WriteBufferEnabled { get; set; } = true;
 
     /// <summary>
     /// 写入缓冲区大小，单位：KB
@@ -168,24 +183,52 @@ public class UltraKVConfig
     /// </summary>
     public static UltraKVConfig Debug => new()
     {
-        EnableUpdateValidation = true, // 启用更新验证
+        UpdateValidationEnabled = true, // 启用更新验证
+    };
+
+    /// <summary>
+    /// SSD 配置
+    /// </summary>
+    public static UltraKVConfig SSD => new()
+    {
+        FileStreamBufferSizeKB = 1024, // 增大缓冲区大小
+        FlushInterval = 1, // 每秒刷新一次
+        AutoCompactEnabled = true, // 启用自动压实
+        AutoCompactThreshold = 30, // 空闲空间超过 10% 时触发压实
+    };
+
+    /// <summary>
+    /// HDD 配置
+    /// </summary>
+    public static UltraKVConfig HDD => new()
+    {
+        FileStreamBufferSizeKB = 256, // 减小缓冲区大小
+        FlushInterval = 10, // 每 10 秒刷新一次
+        AutoCompactEnabled = true, // 启用自动压实
+        AutoCompactThreshold = 50, // 空闲空间超过 50% 时触发压实
+    };
+
+    /// <summary>
+    /// 严格模式（关闭所有性能优化和自动化功能，适用于高可靠性需求场景）
+    /// </summary>
+    public static UltraKVConfig Strict => new()
+    {
+        MemoryModeEnabled = false, // 禁用内存模式
+        WriteBufferEnabled = false, // 禁用写入缓冲
+        UpdateValidationEnabled = true, // 启用更新验证
+        AutoCompactEnabled = false, // 禁用自动压实
     };
 
     public override string ToString()
     {
-        return $"UltraKVConfig [EnableMemoryMode={EnableMemoryMode}, " +
-               $"EnableUpdateValidation={EnableUpdateValidation}, " +
-               $"MaxKeyLength={MaxKeyLength}, " +
-               $"CompressionType={CompressionType}, " +
-               $"EncryptionType={EncryptionType}, " +
-               $"HashType={HashType}, " +
-               $"FileStreamBufferSizeKB={FileStreamBufferSizeKB}KB, " +
-               $"AutoCompactEnabled={AutoCompactEnabled}, " +
-               $"AutoCompactThreshold={AutoCompactThreshold}%, " +
-               $"FlushInterval={FlushInterval}s, " +
-               $"IndexRebuildThreshold={IndexRebuildThreshold}%, " +
-               $"FreeSpaceCompactThreshold={FreeSpaceCompactThreshold}%, " +
-               $"FileUpdateMode={FileUpdateMode}]";
+        return $"UltraKVConfig [MemoryModeEnabled={MemoryModeEnabled}, MemoryModeMaxSizeMB={MemoryModeMaxSizeMB}, " +
+               $"MemoryModeDefaultCacheTimeSeconds={MemoryModeDefaultCacheTimeSeconds}, UpdateValidationEnabled={UpdateValidationEnabled}, " +
+               $"MaxKeyLength={MaxKeyLength}, CompressionType={CompressionType}, EncryptionType={EncryptionType}, " +
+               $"HashType={HashType}, EncryptionKey={(string.IsNullOrEmpty(EncryptionKey) ? "None" : "Set")}, " +
+               $"FileStreamBufferSizeKB={FileStreamBufferSizeKB}, AutoCompactEnabled={AutoCompactEnabled}, " +
+               $"AutoCompactThreshold={AutoCompactThreshold}, FlushInterval={FlushInterval}, IndexRebuildThreshold={IndexRebuildThreshold}, " +
+               $"FreeSpaceCompactThreshold={FreeSpaceCompactThreshold}, FileUpdateMode={FileUpdateMode}, WriteBufferEnabled={WriteBufferEnabled}, " +
+               $"WriteBufferSizeKB={WriteBufferSizeKB}, WriteBufferTimeThresholdMs={WriteBufferTimeThresholdMs}]";
     }
 
     /// <summary>

@@ -43,7 +43,8 @@ dotnet add package UltraKV
 using var engine = new UltraKVEngine<string, string>("test.db");
 engine.Set("key1", "value1");
 var value = engine.Get("key1");
-engine.Delete("key1")
+engine.Remove("key1");
+engine.Flush();
 ```
 
 ## 📋 目录

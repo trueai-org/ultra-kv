@@ -6,9 +6,9 @@ namespace UltraKV.Cli
     {
         private static void Main(string[] args)
         {
-            //TestIndex();
+            TestIndex();
 
-            //return;
+            return;
 
             Console.WriteLine("UltraKV Performance Benchmark - With Delete & Shrink Tests");
             Console.WriteLine($"Started at: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
@@ -19,7 +19,7 @@ namespace UltraKV.Cli
             {
                 try
                 {
-                    //Directory.Delete(dataDir, true);
+                    Directory.Delete(dataDir, true);
                     Thread.Sleep(100); // 等待文件系统释放句柄
                 }
                 catch { }
@@ -510,17 +510,19 @@ namespace UltraKV.Cli
             // 使用示例
             var config = new UltraKVConfig()
             {
-                WriteBufferSizeKB = 256,
-                HashType = HashType.SHA256,
-                EnableWriteBuffer = false,
-                FileUpdateMode = FileUpdateMode.Replace,
-                IndexRebuildThreshold = 50,
+                MemoryModeEnabled = true,
 
-                AutoCompactThreshold = 50,
-                AutoCompactEnabled = true,
+                //WriteBufferSizeKB = 256,
+                //HashType = HashType.SHA256,
+                //WriteBufferEnabled = false,
+                //FileUpdateMode = FileUpdateMode.Replace,
+                //IndexRebuildThreshold = 50,
 
-                EncryptionKey = "1111111Guid.NewGuid().ToString()1",
-                EncryptionType = EncryptionType.AES256GCM,
+                //AutoCompactThreshold = 50,
+                //AutoCompactEnabled = true,
+
+                //EncryptionKey = "1111111Guid.NewGuid().ToString()1",
+                //EncryptionType = EncryptionType.AES256GCM,
 
                 //FileUpdateMode = FileUpdateMode.Replace,
 
@@ -540,12 +542,12 @@ namespace UltraKV.Cli
             {
                 engine.Put($"k{i}", $"v222222222{i}");
 
-                if (i % 100 == 0)
-                {
-                    engine.Flush();
+                //if (i % 100 == 0)
+                //{
+                //    engine.Flush();
 
-                    //Thread.Sleep(10);
-                }
+                //    //Thread.Sleep(10);
+                //}
             }
 
             engine.Flush();
@@ -555,21 +557,21 @@ namespace UltraKV.Cli
 
             //engine.Flush();
 
-            // 删除 50%
-            for (int i = 0; i < 100000; i++)
-            {
-                if (i % 2 == 0)
-                    engine.Delete($"k{i}");
-            }
+            //// 删除 50%
+            //for (int i = 0; i < 100000; i++)
+            //{
+            //    if (i % 2 == 0)
+            //        engine.Delete($"k{i}");
+            //}
 
-            engine.Flush();
+            //engine.Flush();
 
-            var k0 = engine.Get($"k0");
+            //var k0 = engine.Get($"k0");
 
-            var k1 = engine.Get($"k99");
+            //var k1 = engine.Get($"k99");
 
-            // 对索引完全压实
-            engine.Compact(true);
+            //// 对索引完全压实
+            //engine.Compact(true);
 
 
             sw.Stop();
@@ -608,6 +610,9 @@ namespace UltraKV.Cli
             //engine.Flush();
 
             //x51 = engine.Get("user:1001");
+
+
+            Console.ReadKey();
 
             return;
 

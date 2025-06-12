@@ -31,7 +31,7 @@ internal class FastFileWriter : IDisposable
         _lastWriteTime = DateTime.UtcNow;
 
         // 启动定时刷新（如果启用缓冲）
-        if (_config.EnableWriteBuffer && _config.WriteBufferTimeThresholdMs > 0)
+        if (_config.WriteBufferEnabled && _config.WriteBufferTimeThresholdMs > 0)
         {
             _flushTimer = new Timer(OnTimerFlush, null,
                 _config.WriteBufferTimeThresholdMs,
@@ -46,7 +46,7 @@ internal class FastFileWriter : IDisposable
     /// <returns>写入位置</returns>
     public long WriteToEnd(byte[] data)
     {
-        if (!_config.EnableWriteBuffer)
+        if (!_config.WriteBufferEnabled)
         {
             // 禁用缓冲时直接写入
             return WriteDirectly(data);
@@ -228,7 +228,7 @@ internal class FastFileWriter : IDisposable
     /// </summary>
     public (int BufferedBytes, bool IsEnabled) GetStats()
     {
-        return (_bufferPosition, _config.EnableWriteBuffer);
+        return (_bufferPosition, _config.WriteBufferEnabled);
     }
 
     /// <summary>

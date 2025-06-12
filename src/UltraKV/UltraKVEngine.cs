@@ -46,6 +46,11 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
     /// </summary>
     private bool _isCompacting;
 
+    /// <summary>
+    /// 内存缓存管理器
+    /// </summary>
+    private readonly UltraKVMemoryCache<TKey, TValue>? _memoryCache;
+
     public UltraKVEngine(string filePath, UltraKVConfig? config = null)
     {
         var sw = new Stopwatch();
@@ -114,6 +119,14 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
 
         LoadIndex();
 
+        // 如果启用了内存模式，初始化内存缓存
+        if (_config.MemoryModeEnabled)
+        {
+            _memoryCache = new UltraKVMemoryCache<TKey, TValue>(_config, LoadFromDisk, _serializeHelper);
+
+            Console.WriteLine("内存模式已启用");
+        }
+
         // 启动定时刷新
         var flushInterval = _config.FlushInterval * 1000;
         if (flushInterval > 0)
@@ -125,6 +138,11 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
 
         Console.WriteLine($"UltraKVEngine initialized. File: {_filePath}, Config: {_config}, Time: {sw.ElapsedMilliseconds} ms");
     }
+
+    /// <summary>
+    /// 内存模式是否启用
+    /// </summary>
+    public bool IsMemoryModeEnabled => _config.MemoryModeEnabled && _memoryCache != null;
 
     /// <summary>
     /// 加载索引数据到内存
@@ -192,7 +210,6 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
         var keyBytes = _serializeHelper.SerializeKey(key);
         var valueBytes = _serializeHelper.SerializeValue(value);
         var valueHash = HashHelper.CalculateHashToInt64(valueBytes, _config.HashType);
-
         lock (_writeLock)
         {
             // 检查是否是更新操作
@@ -202,69 +219,82 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
                 return;
             }
 
-            long valuePosition;
-
-            // 默认未分配
-            long keyPosition = -1;
-
-            // 文件变小，空间重用
-            if (isAny && _config.FileUpdateMode == FileUpdateMode.Replace
-                && valueBytes.Length <= existingEntry?.ValueLength)
+            // 如果启用了内存模式，写入内存缓存
+            if (IsMemoryModeEnabled)
             {
-                valuePosition = existingEntry.ValuePosition;
-                keyPosition = existingEntry.KeyPosition;
+                _memoryCache!.Set(key, valueBytes);
 
-                //// 定位到写入位置
-                //_fileStream.Seek(valuePosition, SeekOrigin.Begin);
-                //_fileStream.Write(valueBytes);
+                var keyPosition = -1;
+                var valuePosition = -1;
 
-                // 直接写入指定位置
-                _fastFileWriter.WriteAt(valuePosition, valueBytes);
+                var indexEntry = new IndexEntryInfo<TKey>(keyBytes.Length, valueBytes.Length, valueHash, keyPosition, valuePosition);
+                _index.AddOrUpdate(key, indexEntry, (k, v) => indexEntry);
             }
             else
             {
-                //// 文件末尾
-                //valuePosition = _fileStream.Length;
+                long valuePosition;
 
-                //// 不需要分配新的位置，强制文件立即扩展到新的大小
-                //// SetLength 是一个同步的文件系统操作，立即修改文件的元数据，触发 IO
-                ////_fileStream.SetLength(valuePosition + valueBytes.Length);
+                // 默认未分配
+                long keyPosition = -1;
 
-                //// 如果总是追加到文件末尾
-                ////_fileStream.Seek(0, SeekOrigin.End);
-                ////_fileStream.Seek(valuePosition, SeekOrigin.Begin);
-
-                //// 检查位置后决定
-                //if (_fileStream.Position != _fileStream.Length)
-                //{
-                //    _fileStream.Seek(0, SeekOrigin.End);
-                //}
-
-                //_fileStream.Write(valueBytes);
-
-                // 文件末尾追加（使用缓冲）
-                valuePosition = _fastFileWriter.WriteToEnd(valueBytes);
-            }
-
-            var indexEntry = new IndexEntryInfo<TKey>(keyBytes.Length, valueBytes.Length, valueHash, keyPosition, valuePosition);
-
-            _index.AddOrUpdate(key, indexEntry, (k, v) => indexEntry);
-
-            //_fileStream.Flush();
-
-            // 更新后验证
-            if (_config.EnableUpdateValidation)
-            {
-                _fastFileWriter.Flush(); // 确保数据已写入
-
-                var v = Get(key);
-                if (v == null || !EqualityComparer<TValue>.Default.Equals(v, value))
+                // 文件变小，空间重用
+                if (isAny && _config.FileUpdateMode == FileUpdateMode.Replace
+                    && valueBytes.Length <= existingEntry?.ValueLength)
                 {
-                    throw new InvalidOperationException($"Failed to set value for key '{key}'. Expected: {value}, Actual: {v}");
-                }
-            }
+                    valuePosition = existingEntry.ValuePosition;
+                    keyPosition = existingEntry.KeyPosition;
 
-            _isChanged = true;
+                    //// 定位到写入位置
+                    //_fileStream.Seek(valuePosition, SeekOrigin.Begin);
+                    //_fileStream.Write(valueBytes);
+
+                    // 直接写入指定位置
+                    _fastFileWriter.WriteAt(valuePosition, valueBytes);
+                }
+                else
+                {
+                    //// 文件末尾
+                    //valuePosition = _fileStream.Length;
+
+                    //// 不需要分配新的位置，强制文件立即扩展到新的大小
+                    //// SetLength 是一个同步的文件系统操作，立即修改文件的元数据，触发 IO
+                    ////_fileStream.SetLength(valuePosition + valueBytes.Length);
+
+                    //// 如果总是追加到文件末尾
+                    ////_fileStream.Seek(0, SeekOrigin.End);
+                    ////_fileStream.Seek(valuePosition, SeekOrigin.Begin);
+
+                    //// 检查位置后决定
+                    //if (_fileStream.Position != _fileStream.Length)
+                    //{
+                    //    _fileStream.Seek(0, SeekOrigin.End);
+                    //}
+
+                    //_fileStream.Write(valueBytes);
+
+                    // 文件末尾追加（使用缓冲）
+                    valuePosition = _fastFileWriter.WriteToEnd(valueBytes);
+                }
+
+                var indexEntry = new IndexEntryInfo<TKey>(keyBytes.Length, valueBytes.Length, valueHash, keyPosition, valuePosition);
+                _index.AddOrUpdate(key, indexEntry, (k, v) => indexEntry);
+
+                //_fileStream.Flush();
+
+                // 更新后验证
+                if (_config.UpdateValidationEnabled)
+                {
+                    _fastFileWriter.Flush(); // 确保数据已写入
+
+                    var v = Get(key);
+                    if (v == null || !EqualityComparer<TValue>.Default.Equals(v, value))
+                    {
+                        throw new InvalidOperationException($"Failed to set value for key '{key}'. Expected: {value}, Actual: {v}");
+                    }
+                }
+
+                _isChanged = true;
+            }
         }
     }
 
@@ -314,25 +344,26 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
     }
 
     /// <summary>
-    /// 获取值
+    /// 内部方法 - 读取内容
     /// </summary>
-    public TValue? Get(TKey key)
+    /// <param name="key"></param>
+    /// <param name="entry"></param>
+    /// <returns></returns>
+    private TValue? ReadValue(TKey key, IndexEntryInfo<TKey> entry)
     {
-        if (key == null) return default;
-
-        if (!_index.TryGetValue(key, out var entry) || !entry.IsValidEntryValue)
-        {
+        if (key == null || entry == null)
             return default;
-        }
 
         if (_isCompacting)
         {
             lock (_readDataLock)
             {
-                if (_index.TryGetValue(key, out entry) && entry != null && entry.IsValidEntryValue)
+                if (_index.TryGetValue(key, out var newEntry) && newEntry != null && newEntry.IsValidEntryValue)
                 {
                     try
                     {
+                        entry = newEntry;
+
                         // 如果文件在缓冲区，还未写入
                         if (entry.ValuePosition + entry.ValueLength > _fileStream.Length)
                         {
@@ -357,7 +388,7 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
                 }
                 else
                 {
-                    // 压实后，数据无效
+                    // 压实后，数据无效了
                     return default;
                 }
             }
@@ -366,21 +397,29 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
         {
             try
             {
-                // 如果文件在缓冲区，还未写入
-                if (entry.ValuePosition + entry.ValueLength > _fileStream.Length)
+                try
                 {
-                    _fastFileWriter.Flush();
-                }
+                    // 如果文件在缓冲区，还未写入
+                    if (entry.ValuePosition + entry.ValueLength > _fileStream.Length)
+                    {
+                        _fastFileWriter.Flush();
+                    }
 
-                _fileStream.Seek(entry.ValuePosition, SeekOrigin.Begin);
-                var valueBytes = new byte[entry.ValueLength];
-                if (_fileStream.Read(valueBytes, 0, entry.ValueLength) != entry.ValueLength)
+                    _fileStream.Seek(entry.ValuePosition, SeekOrigin.Begin);
+                    var valueBytes = new byte[entry.ValueLength];
+                    if (_fileStream.Read(valueBytes, 0, entry.ValueLength) != entry.ValueLength)
+                    {
+                        Console.WriteLine($"Failed to read value for key '{key}'. Expected length: {entry.ValueLength}");
+                        return default;
+                    }
+
+                    return _serializeHelper.DeserializeValue<TValue>(valueBytes);
+                }
+                catch (Exception ex)
                 {
-                    Console.WriteLine($"Failed to read value for key '{key}'. Expected length: {entry.ValueLength}");
+                    Console.WriteLine($"Error reading value for key: {ex.Message}");
                     return default;
                 }
-
-                return _serializeHelper.DeserializeValue<TValue>(valueBytes);
             }
             catch (Exception ex)
             {
@@ -388,6 +427,31 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
                 return default;
             }
         }
+    }
+
+    /// <summary>
+    /// 获取值
+    /// </summary>
+    public TValue? Get(TKey key)
+    {
+        if (key == null) return default;
+
+        if (!_index.TryGetValue(key, out var entry) || !entry.IsValidEntryValue)
+        {
+            return default;
+        }
+
+        if (IsMemoryModeEnabled)
+        {
+            // 如果启用了内存模式，尝试从内存缓存中获取
+            var cachedValue = _memoryCache!.Get(key);
+            if (cachedValue != null)
+            {
+                return cachedValue;
+            }
+        }
+
+        return ReadValue(key, entry);
     }
 
     /// <summary>
@@ -414,6 +478,12 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
                 _deletedIndex.AddOrUpdate(key, entry, (k, v) => entry);
 
                 _isChanged = true;
+
+                // 从内存缓存删除
+                if (IsMemoryModeEnabled)
+                {
+                    _memoryCache!.Remove(key);
+                }
 
                 return true;
             }
@@ -1037,7 +1107,7 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
                         }
 
                         // 验证数据完整性（可选）
-                        if (_config.EnableUpdateValidation)
+                        if (_config.UpdateValidationEnabled)
                         {
                             var readHash = HashHelper.CalculateHashToInt64(valueBytes, _config.HashType);
                             if (readHash != oldEntry.ValueHash)
@@ -1315,6 +1385,7 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
             }
             catch { }
 
+            _memoryCache?.Dispose();
             _dataProcessor?.Dispose();
             _fileStream?.Dispose();
 
@@ -1494,7 +1565,7 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
                 }
 
                 // 4. 批量验证（如果启用）
-                if (_config.EnableUpdateValidation && successCount > 0)
+                if (_config.UpdateValidationEnabled && successCount > 0)
                 {
                     _fastFileWriter.Flush(); // 确保数据已写入
 
@@ -1586,6 +1657,41 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
         }
 
         return SetBatch(dictionary, skipDuplicates);
+    }
+
+    /// <summary>
+    /// 获取内存缓存统计信息
+    /// </summary>
+    public MemoryCacheStats? GetMemoryCacheStats()
+    {
+        return IsMemoryModeEnabled ? _memoryCache!.GetStats() : null;
+    }
+
+    // 辅助方法：从磁盘加载单个值
+    private TValue? LoadFromDisk(TKey key)
+    {
+        // 使用现有的磁盘读取逻辑
+        return GetFromDisk(key);
+    }
+
+    // 重构现有方法以支持内存模式
+    private TValue? GetFromDisk(TKey key)
+    {
+        // 现有的磁盘读取逻辑
+        if (!_index.TryGetValue(key, out var entryInfo))
+            return default;
+
+        return ReadValue(key, entryInfo);
+    }
+
+    private bool RemoveFromDisk(TKey key)
+    {
+        // 现有的磁盘删除逻辑
+        if (!_index.TryRemove(key, out var entryInfo))
+            return false;
+
+        _deletedIndex[key] = entryInfo;
+        return true;
     }
 
     /// <summary>
