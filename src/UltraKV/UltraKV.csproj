@@ -16,6 +16,9 @@
 		<PackageProjectUrl>https://github.com/trueai-org/ultra-kv</PackageProjectUrl>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		<Company>trueai-org</Company>
+		<Product>UltraKV</Product>
+		<Copyright>Copyright © trueai-org</Copyright>
 
 		<!-- 或者不需要用户接受许可证 -->
 		<PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
