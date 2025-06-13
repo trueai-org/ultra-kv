@@ -24,10 +24,10 @@ jobs:
         dotnet-version: '8.0.x' # 根据你的项目调整版本
         
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore src/UltraKV/UltraKV.csproj
       
     - name: Build project
-      run: dotnet build --configuration Release --no-restore
+      run: dotnet build src/UltraKV/UltraKV.csproj --configuration Release --no-restore
       
     #- name: Test project
     #  run: dotnet test --configuration Release --no-build --verbosity normal
@@ -47,7 +47,7 @@ jobs:
         
     - name: Pack NuGet package
       run: |
-        dotnet pack --configuration Release --no-build \
+        dotnet pack src/UltraKV/UltraKV.csproj --configuration Release --no-build \
           -p:PackageVersion=${{ steps.get_version.outputs.VERSION }} \
           -p:Version=${{ steps.get_version.outputs.VERSION }} \
           --output ./nupkg
