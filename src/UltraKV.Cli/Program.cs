@@ -6,8 +6,13 @@ namespace UltraKV.Cli
     {
         private static void Main(string[] args)
         {
-            TestIndex();
+            SimpleMemoryPerformanceTest();
+            Console.ReadKey();
+
             return;
+
+            //TestIndex();
+            //return;
 
             Console.WriteLine("UltraKV Performance Benchmark - With Delete & Shrink Tests");
             Console.WriteLine($"Started at: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
@@ -196,7 +201,7 @@ namespace UltraKV.Cli
                 {
                     // 随机1k - 4k的字符串作为值
                     var randomValueString = new string('y', new Random().Next(1, 40));
-                    engine.Put($"key_0", $"{randomValueString}{i}");
+                    engine.Put($"key_{i}", $"{randomValueString}{i}");
                     //engine.Flush();
                 }
 
@@ -553,7 +558,7 @@ namespace UltraKV.Cli
                     //}
                 }
 
-               
+
 
                 sw.Stop();
 
@@ -648,6 +653,95 @@ namespace UltraKV.Cli
 
             // 刷新保存索引
             engine.Flush();
+        }
+        /// <summary>
+        /// 简化的内存模式性能测试 - 执行10次取平均值
+        /// </summary>
+        private static void SimpleMemoryPerformanceTest()
+        {
+            Console.WriteLine("=== Simple Memory Mode Performance Test ===");
+            Console.WriteLine($"Started at: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
+
+            const int ROUNDS = 10;
+            const int ITERATIONS = 100_000;
+
+            var writeResults = new List<double>();
+            var readResults = new List<double>();
+            var deleteResults = new List<double>();
+            var containsResults = new List<double>();
+
+            var dataDir = "./simple_memory_test";
+
+            for (int round = 1; round <= ROUNDS; round++)
+            {
+                Console.WriteLine($"Round {round}/{ROUNDS}");
+
+                // 清理并重新创建目录
+                if (Directory.Exists(dataDir))
+                {
+                    Directory.Delete(dataDir, true);
+                }
+                Directory.CreateDirectory(dataDir);
+
+                using var manager = new UltraKVManager<string, string>(dataDir);
+                var engine = manager.GetEngine("test", new UltraKVConfig
+                {
+                    MemoryModeEnabled = true
+                });
+
+                var sw = Stopwatch.StartNew();
+
+                // 1. 写入测试
+                sw.Restart();
+                for (int i = 0; i < ITERATIONS; i++)
+                {
+                    engine.Put($"key_{i}", $"value_{i}");
+                }
+                sw.Stop();
+                var writeOps = ITERATIONS * 1000.0 / sw.ElapsedMilliseconds;
+                writeResults.Add(writeOps);
+
+                // 2. 读取测试
+                sw.Restart();
+                for (int i = 0; i < ITERATIONS; i++)
+                {
+                    var value = engine.Get($"key_{i}");
+                }
+                sw.Stop();
+                var readOps = ITERATIONS * 1000.0 / sw.ElapsedMilliseconds;
+                readResults.Add(readOps);
+
+                // 3. ContainsKey测试
+                sw.Restart();
+                for (int i = 0; i < ITERATIONS; i++)
+                {
+                    var exists = engine.ContainsKey($"key_{i}");
+                }
+                sw.Stop();
+                var containsOps = ITERATIONS * 1000.0 / sw.ElapsedMilliseconds;
+                containsResults.Add(containsOps);
+
+                // 4. 删除测试
+                sw.Restart();
+                for (int i = 0; i < ITERATIONS / 2; i++)
+                {
+                    engine.Delete($"key_{i}");
+                }
+                sw.Stop();
+                var deleteOps = (ITERATIONS / 2) * 1000.0 / sw.ElapsedMilliseconds;
+                deleteResults.Add(deleteOps);
+
+                Console.WriteLine($"  Write: {writeOps:N0} ops/sec, Read: {readOps:N0} ops/sec");
+            }
+
+            // 输出平均结果
+            Console.WriteLine("\n=== Average Performance Results ===");
+            Console.WriteLine($"Write Performance: {writeResults.Average():N0} ops/sec");
+            Console.WriteLine($"Read Performance: {readResults.Average():N0} ops/sec");
+            Console.WriteLine($"ContainsKey Performance: {containsResults.Average():N0} ops/sec");
+            Console.WriteLine($"Delete Performance: {deleteResults.Average():N0} ops/sec");
+
+            Console.WriteLine($"\nCompleted at: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
         }
     }
 }

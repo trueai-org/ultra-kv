@@ -1040,8 +1040,9 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
                     _deletedIndex.Clear();
                     _isChanged = false;
 
-                    // 清空内存缓存
-                    _valueCache.Clear();
+                    // 不需要清空
+                    //// 清空内存缓存
+                    //_valueCache.Clear();
 
                     // 重新初始化 FastFileWriter
                     ReinitializeFastFileWriter();

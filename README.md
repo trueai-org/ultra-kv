@@ -131,6 +131,19 @@ engine.Flush();
 | **Data Update** | **333,333** | In-place update optimization |
 | **Random Access** | **500,000** | Excellent random access performance |
 
+#### 🧠 In-Memory Mode Performance
+
+> Test Environment: .NET 8.0, Windows 11, Average of 10 rounds, Memory mode operations
+
+| Operation Type | Performance (ops/sec) | Notes |
+|---------------|----------------------|-------|
+| **Write Performance** | **1,958,190** | Ultra-high speed memory writes |
+| **Read Performance** | **6,100,949** | Lightning-fast memory reads |
+| **ContainsKey Performance** | **7,844,485** | Optimized key existence checks |
+| **Delete Performance** | **5,984,823** | Efficient memory deletions |
+
+> *Memory mode provides 3-8x performance improvement over file-based storage, ideal for cache and temporary data scenarios, Automatic timed persistence, and the memory mode can be turned off at any time*
+
 ## 🚀 Quick Start
 
 ### 📦 Installation
