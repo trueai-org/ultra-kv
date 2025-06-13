@@ -7,7 +7,6 @@ namespace UltraKV.Cli
         private static void Main(string[] args)
         {
             TestIndex();
-
             return;
 
             Console.WriteLine("UltraKV Performance Benchmark - With Delete & Shrink Tests");
@@ -500,7 +499,7 @@ namespace UltraKV.Cli
             {
                 try
                 {
-                    Directory.Delete(dataDir, true);
+                    //Directory.Delete(dataDir, true);
                     Thread.Sleep(100); // 等待文件系统释放句柄
                 }
                 catch { }
@@ -510,7 +509,8 @@ namespace UltraKV.Cli
             // 使用示例
             var config = new UltraKVConfig()
             {
-                MemoryModeEnabled = false,
+                MemoryModeEnabled = true,
+                //ValueCacheEnabled = true,
 
                 //WriteBufferSizeKB = 256,
                 //HashType = HashType.SHA256,
@@ -532,7 +532,7 @@ namespace UltraKV.Cli
             using var engine = new UltraKVEngine<string, string>(Path.Combine(dataDir, "test.db"), config);
 
 
-            for (int j = 0; j < 5; j++)
+            for (int j = 0; j < 10; j++)
             {
                 var sw = new Stopwatch();
                 sw.Start();
@@ -553,13 +553,18 @@ namespace UltraKV.Cli
                     //}
                 }
 
-                engine.Flush();
+               
 
                 sw.Stop();
 
-                engine.Clear();
-
                 engine.Flush();
+                engine.Clear();
+                engine.Flush();
+
+
+                //engine.Clear();
+
+                //engine.Flush();
 
                 // 计算每秒速度
                 var opsPerSec = count * 1000.0 / sw.ElapsedMilliseconds;
@@ -589,9 +594,6 @@ namespace UltraKV.Cli
 
             //// 对索引完全压实
             //engine.Compact(true);
-
-
-
 
 
             //var x = engine.Get("k0"); // 触发索引创建

@@ -1,4 +1,5 @@
-﻿using System.Collections.Concurrent;
+﻿using Microsoft.Extensions.Caching.Memory;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Security.Cryptography;
 
@@ -47,9 +48,9 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
     private bool _isCompacting;
 
     /// <summary>
-    /// 内存缓存管理器
+    /// 值缓存
     /// </summary>
-    private readonly UltraKVMemoryCache<TKey, TValue>? _memoryCache;
+    private readonly MemoryCache _valueCache;
 
     public UltraKVEngine(string filePath, UltraKVConfig? config = null)
     {
@@ -62,6 +63,8 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
         _filePath = filePath;
         _index = new ConcurrentDictionary<TKey, IndexEntryInfo<TKey>>();
         _deletedIndex = new ConcurrentDictionary<TKey, IndexEntryInfo<TKey>>();
+
+        _valueCache = new MemoryCache(new MemoryCacheOptions());
 
         // 创建目录
         Directory.CreateDirectory(Path.GetDirectoryName(filePath) ?? ".");
@@ -119,14 +122,6 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
 
         LoadIndex();
 
-        // 如果启用了内存模式，初始化内存缓存
-        if (_config.MemoryModeEnabled)
-        {
-            _memoryCache = new UltraKVMemoryCache<TKey, TValue>(_config, LoadFromDisk, _serializeHelper);
-
-            Console.WriteLine("内存模式已启用");
-        }
-
         // 启动定时刷新
         var flushInterval = _config.FlushInterval * 1000;
         if (flushInterval > 0)
@@ -142,7 +137,7 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
     /// <summary>
     /// 内存模式是否启用
     /// </summary>
-    public bool IsMemoryModeEnabled => _config.MemoryModeEnabled && _memoryCache != null;
+    public bool IsMemoryModeEnabled => _config.MemoryModeEnabled;
 
     /// <summary>
     /// 加载索引数据到内存
@@ -188,6 +183,16 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
                             if (entryInfo.Key != null)
                             {
                                 _index.AddOrUpdate(entryInfo.Key, entryInfo, (k, v) => entryInfo);
+
+                                // 如果开启了内存模式，将 key value 缓存到内存
+                                if (IsMemoryModeEnabled)
+                                {
+                                    var value = ReadValue(entryInfo.Key, entryInfo);
+                                    if (value != null)
+                                    {
+                                        _valueCache.Set(entryInfo.Key, value);
+                                    }
+                                }
                             }
                         }
                         catch (Exception ex)
@@ -205,7 +210,18 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
     /// </summary>
     public void Set(TKey key, TValue value)
     {
-        if (key == null) throw new ArgumentNullException(nameof(key));
+        if (key == null)
+            throw new ArgumentNullException(nameof(key));
+
+        if (IsMemoryModeEnabled)
+        {
+            lock (_writeLock)
+            {
+                _valueCache.Set(key, value);
+                _isChanged = true;
+                return;
+            }
+        }
 
         var keyBytes = _serializeHelper.SerializeKey(key);
         var valueBytes = _serializeHelper.SerializeValue(value);
@@ -219,82 +235,68 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
                 return;
             }
 
-            // 如果启用了内存模式，写入内存缓存
-            if (IsMemoryModeEnabled)
+            long valuePosition;
+
+            // 默认未分配
+            long keyPosition = -1;
+
+            // 文件变小，空间重用
+            if (isAny && _config.FileUpdateMode == FileUpdateMode.Replace
+                && valueBytes.Length <= existingEntry?.ValueLength)
             {
-                _memoryCache!.Set(key, valueBytes);
+                valuePosition = existingEntry.ValuePosition;
+                keyPosition = existingEntry.KeyPosition;
 
-                var keyPosition = -1;
-                var valuePosition = -1;
+                //// 定位到写入位置
+                //_fileStream.Seek(valuePosition, SeekOrigin.Begin);
+                //_fileStream.Write(valueBytes);
 
-                var indexEntry = new IndexEntryInfo<TKey>(keyBytes.Length, valueBytes.Length, valueHash, keyPosition, valuePosition);
-                _index.AddOrUpdate(key, indexEntry, (k, v) => indexEntry);
+                // 直接写入指定位置
+                _fastFileWriter.WriteAt(valuePosition, valueBytes);
             }
             else
             {
-                long valuePosition;
+                //// 文件末尾
+                //valuePosition = _fileStream.Length;
 
-                // 默认未分配
-                long keyPosition = -1;
+                //// 不需要分配新的位置，强制文件立即扩展到新的大小
+                //// SetLength 是一个同步的文件系统操作，立即修改文件的元数据，触发 IO
+                ////_fileStream.SetLength(valuePosition + valueBytes.Length);
 
-                // 文件变小，空间重用
-                if (isAny && _config.FileUpdateMode == FileUpdateMode.Replace
-                    && valueBytes.Length <= existingEntry?.ValueLength)
-                {
-                    valuePosition = existingEntry.ValuePosition;
-                    keyPosition = existingEntry.KeyPosition;
+                //// 如果总是追加到文件末尾
+                ////_fileStream.Seek(0, SeekOrigin.End);
+                ////_fileStream.Seek(valuePosition, SeekOrigin.Begin);
 
-                    //// 定位到写入位置
-                    //_fileStream.Seek(valuePosition, SeekOrigin.Begin);
-                    //_fileStream.Write(valueBytes);
+                //// 检查位置后决定
+                //if (_fileStream.Position != _fileStream.Length)
+                //{
+                //    _fileStream.Seek(0, SeekOrigin.End);
+                //}
 
-                    // 直接写入指定位置
-                    _fastFileWriter.WriteAt(valuePosition, valueBytes);
-                }
-                else
-                {
-                    //// 文件末尾
-                    //valuePosition = _fileStream.Length;
+                //_fileStream.Write(valueBytes);
 
-                    //// 不需要分配新的位置，强制文件立即扩展到新的大小
-                    //// SetLength 是一个同步的文件系统操作，立即修改文件的元数据，触发 IO
-                    ////_fileStream.SetLength(valuePosition + valueBytes.Length);
-
-                    //// 如果总是追加到文件末尾
-                    ////_fileStream.Seek(0, SeekOrigin.End);
-                    ////_fileStream.Seek(valuePosition, SeekOrigin.Begin);
-
-                    //// 检查位置后决定
-                    //if (_fileStream.Position != _fileStream.Length)
-                    //{
-                    //    _fileStream.Seek(0, SeekOrigin.End);
-                    //}
-
-                    //_fileStream.Write(valueBytes);
-
-                    // 文件末尾追加（使用缓冲）
-                    valuePosition = _fastFileWriter.WriteToEnd(valueBytes);
-                }
-
-                var indexEntry = new IndexEntryInfo<TKey>(keyBytes.Length, valueBytes.Length, valueHash, keyPosition, valuePosition);
-                _index.AddOrUpdate(key, indexEntry, (k, v) => indexEntry);
-
-                //_fileStream.Flush();
-
-                // 更新后验证
-                if (_config.UpdateValidationEnabled)
-                {
-                    _fastFileWriter.Flush(); // 确保数据已写入
-
-                    var v = Get(key);
-                    if (v == null || !EqualityComparer<TValue>.Default.Equals(v, value))
-                    {
-                        throw new InvalidOperationException($"Failed to set value for key '{key}'. Expected: {value}, Actual: {v}");
-                    }
-                }
-
-                _isChanged = true;
+                // 文件末尾追加（使用缓冲）
+                valuePosition = _fastFileWriter.WriteToEnd(valueBytes);
             }
+
+            var indexEntry = new IndexEntryInfo<TKey>(keyBytes.Length, valueBytes.Length, valueHash, keyPosition, valuePosition);
+            _index.AddOrUpdate(key, indexEntry, (k, v) => indexEntry);
+
+            //_fileStream.Flush();
+
+            // 更新后验证
+            if (_config.UpdateValidationEnabled)
+            {
+                _fastFileWriter.Flush(); // 确保数据已写入
+
+                var v = Get(key);
+                if (v == null || !EqualityComparer<TValue>.Default.Equals(v, value))
+                {
+                    throw new InvalidOperationException($"Failed to set value for key '{key}'. Expected: {value}, Actual: {v}");
+                }
+            }
+
+            _isChanged = true;
         }
     }
 
@@ -434,24 +436,42 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
     /// </summary>
     public TValue? Get(TKey key)
     {
-        if (key == null) return default;
+        if (key == null)
+            return default;
+
+        if (IsMemoryModeEnabled)
+        {
+            if (_valueCache.TryGetValue<TValue>(key, out var v) && v != null)
+            {
+                return v;
+            }
+            return default;
+        }
 
         if (!_index.TryGetValue(key, out var entry) || !entry.IsValidEntryValue)
         {
             return default;
         }
 
-        if (IsMemoryModeEnabled)
+        // 值缓存
+        if (_config.ValueCacheEnabled)
         {
-            // 如果启用了内存模式，尝试从内存缓存中获取
-            var cachedValue = _memoryCache!.Get(key);
-            if (cachedValue != null)
+            if (_valueCache.TryGetValue<TValue>(key, out var cachedValue) && cachedValue != null)
             {
                 return cachedValue;
             }
         }
 
-        return ReadValue(key, entry);
+        var value = ReadValue(key, entry);
+
+        // 值缓存
+        if (_config.ValueCacheEnabled)
+        {
+            var sec = _config.ValueCacheSeconds > 0 ? TimeSpan.FromSeconds(_config.ValueCacheSeconds) : TimeSpan.Zero;
+            _valueCache.Set(key, value, sec);
+        }
+
+        return value;
     }
 
     /// <summary>
@@ -459,7 +479,19 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
     /// </summary>
     public bool ContainsKey(TKey key)
     {
-        return key != null && _index.ContainsKey(key);
+        if (key == null)
+            return false;
+
+        if (IsMemoryModeEnabled)
+        {
+            if (_valueCache.TryGetValue(key, out _))
+            {
+                return true;
+            }
+            return false;
+        }
+
+        return _index.ContainsKey(key);
     }
 
     /// <summary>
@@ -469,6 +501,13 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
     {
         if (key == null) return false;
 
+        if (IsMemoryModeEnabled)
+        {
+            _valueCache.Remove(key);
+            _isChanged = true;
+            return true;
+        }
+
         lock (_writeLock)
         {
             if (_index.TryRemove(key, out var entry))
@@ -477,14 +516,12 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
                 entry.IsDeleted = 1;
                 _deletedIndex.AddOrUpdate(key, entry, (k, v) => entry);
 
-                _isChanged = true;
-
-                // 从内存缓存删除
-                if (IsMemoryModeEnabled)
+                if (_config.ValueCacheEnabled)
                 {
-                    _memoryCache!.Remove(key);
+                    _valueCache.Remove(key);
                 }
 
+                _isChanged = true;
                 return true;
             }
         }
@@ -497,6 +534,11 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
     /// </summary>
     public void Clear()
     {
+        if (IsMemoryModeEnabled || _config.ValueCacheEnabled)
+        {
+            _valueCache.Clear();
+        }
+
         lock (_writeLock)
         {
             _isChanged = true;
@@ -777,247 +819,597 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
     }
 
     /// <summary>
-    /// 强制刷新到磁盘
+    /// 内存模式持久化操作
     /// </summary>
-    public void Flush()
+    private void FlushMemoryMode()
     {
+        if (!IsMemoryModeEnabled)
+        {
+            return;
+        }
+
+        if (!_isChanged)
+        {
+            return;
+        }
+
         lock (_writeLock)
         {
-            // 先刷新文件写入器
-            _fastFileWriter.Flush();
-
             if (!_isChanged)
             {
                 return;
             }
 
-            var useEncryption = _config.EncryptionType != EncryptionType.None;
-
             var sw = new Stopwatch();
             sw.Start();
 
-            // 数目较少，始终重建
-            if (_index.Count < 10 || _config.IndexRebuildThreshold <= 0)
+            // 检查内存缓存是否有数据
+            var cacheCount = _valueCache.Count;
+            if (cacheCount == 0)
             {
-                AppendIndexToFile();
+                Console.WriteLine("Memory cache is empty, skipping flush.");
             }
-            else
+
+            Console.WriteLine($"Starting memory mode flush operation. Cache items: {cacheCount}");
+
+            // 临时文件路径
+            var tempPath = _filePath + ".memory.tmp";
+            var backupPath = _filePath + ".backup";
+
+            try
             {
-                // 总使用索引长度
-                var useSize = _databaseHeader.IndexUsedSize;
+                // 第一步：创建临时文件，写入头信息和数据信息
+                using var tempStream = new FileStream(tempPath, FileMode.Create, FileAccess.ReadWrite,
+                    FileShare.None, _config.FileStreamBufferSizeKB * 1024, FileOptions.SequentialScan);
 
-                // 实际使用索引长度，排除新增
-                var realSize =
-                     useEncryption ?
-                     _index.Where(c => c.Value.KeyPosition > 0).Sum(c => IndexEntryEncrypted.SIZE + IndexEntry.SIZE + c.Value.KeyLength + _config.EncryptionPaddingLength) :
-                     _index.Where(c => c.Value.KeyPosition > 0).Sum(c => IndexEntry.SIZE + c.Value.KeyLength);
-
-                // 删除的索引长度（真实的删除长度，不是当前索引内的）
-                var deletedSize = useSize - realSize;
-
-                // 如果删除的索引长度超过阈值，即：空闲索引空间超过阈值，则重建索引
-                if (deletedSize > 0 && realSize > 0
-                    && deletedSize > useSize * _config.IndexRebuildThreshold / 100)
+                // 创建新的数据库头部
+                var newHeader = new DatabaseHeader
                 {
-                    // 重建索引
+                    Magic = DatabaseHeader.MAGIC_NUMBER,
+                    Version = DatabaseHeader.CURRENT_VERSION,
+                    CompressionType = _databaseHeader.CompressionType,
+                    EncryptionType = _databaseHeader.EncryptionType,
+                    HashType = _databaseHeader.HashType,
+                    CreatedTime = _databaseHeader.CreatedTime,
+                    IndexCount = 0 // 将在后面更新
+                };
+
+                // 写入占位的头部信息
+                newHeader = newHeader.WriteDatabaseHeader(tempStream, _config);
+
+                // 数据写入起始位置
+                long currentDataPosition = DatabaseHeader.SIZE;
+                var newIndex = new Dictionary<TKey, IndexEntryInfo<TKey>>();
+                var serializedItems = new List<MemoryCacheItem<TKey, TValue>>();
+
+                // 序列化内存缓存中的所有数据
+                foreach (TKey key in _valueCache.Keys)
+                {
+                    try
+                    {
+                        var value = _valueCache.Get<TValue>(key)!;
+
+                        var keyBytes = _serializeHelper.SerializeKey(key);
+                        var valueBytes = _serializeHelper.SerializeValue(value);
+                        var valueHash = HashHelper.CalculateHashToInt64(valueBytes, _config.HashType);
+
+                        var item = new MemoryCacheItem<TKey, TValue>
+                        {
+                            Key = key,
+                            Value = value,
+                            KeyBytes = keyBytes,
+                            ValueBytes = valueBytes,
+                            ValueHash = valueHash,
+                            ValuePosition = currentDataPosition
+                        };
+
+                        serializedItems.Add(item);
+                        currentDataPosition += valueBytes.Length;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error serializing cache item for key '{key}': {ex.Message}");
+                        // 继续处理其他项目
+                    }
+                }
+
+                // 批量写入数据到临时文件
+                tempStream.Seek(DatabaseHeader.SIZE, SeekOrigin.Begin);
+                foreach (var item in serializedItems)
+                {
+                    tempStream.Write(item.ValueBytes);
+
+                    // 创建索引条目
+                    var indexEntry = new IndexEntryInfo<TKey>(
+                        item.KeyBytes.Length,
+                        item.ValueBytes.Length,
+                        item.ValueHash,
+                        -1, // KeyPosition 将在写入索引时设置
+                        item.ValuePosition
+                    );
+
+                    newIndex[item.Key] = indexEntry;
+                }
+
+                // 第二步：写入索引信息，写入头信息
+                var indexStartOffset = currentDataPosition;
+                var indexStartPosition = currentDataPosition;
+                var indexBuffer = new List<byte>();
+                var useEncryption = _config.EncryptionType != EncryptionType.None;
+
+                foreach (var kvp in newIndex)
+                {
+                    var entryInfo = kvp.Value;
+
+                    // 设置索引条目的键位置
+                    entryInfo.KeyPosition = indexStartPosition;
+                    entryInfo.IsUpdated = 0;
+
+                    byte[] entryBytes;
+                    if (useEncryption)
+                    {
+                        // 使用加密索引
+                        entryBytes = SerializeEncryptedIndexEntry(kvp.Key, entryInfo);
+                    }
+                    else
+                    {
+                        // 使用明文索引
+                        var keyBytes = _serializeHelper.SerializeKey(kvp.Key);
+                        var entry = entryInfo.ToEntry();
+
+                        var plainEntryBytes = new byte[IndexEntry.SIZE];
+                        unsafe
+                        {
+                            fixed (byte* ptr = plainEntryBytes)
+                            {
+                                *(IndexEntry*)ptr = entry;
+                            }
+                        }
+
+                        entryBytes = new byte[IndexEntry.SIZE + keyBytes.Length];
+                        Buffer.BlockCopy(plainEntryBytes, 0, entryBytes, 0, IndexEntry.SIZE);
+                        Buffer.BlockCopy(keyBytes, 0, entryBytes, IndexEntry.SIZE, keyBytes.Length);
+                    }
+
+                    // 更新索引映射
+                    newIndex[kvp.Key] = entryInfo;
+                    indexBuffer.AddRange(entryBytes);
+                    indexStartPosition += entryBytes.Length;
+                }
+
+                // 写入索引数据到文件
+                var indexBytes = indexBuffer.ToArray();
+                tempStream.Seek(indexStartOffset, SeekOrigin.Begin);
+                tempStream.Write(indexBytes);
+
+                var indexAllocationSize = indexBytes.Length;
+
+                // 如果索引阈值 > 0，则扩容文件（预留空间）
+                if (_config.IndexRebuildThreshold > 0 && newIndex.Count >= 10)
+                {
+                    var appendSize = _config.IndexRebuildThreshold * indexBytes.Length / 100;
+                    if (appendSize > 0)
+                    {
+                        var emptyBytes = new byte[appendSize];
+                        var end = tempStream.Length;
+                        var newSize = end + appendSize;
+
+                        tempStream.SetLength(newSize);
+                        tempStream.Write(emptyBytes, 0, emptyBytes.Length);
+
+                        indexAllocationSize += appendSize;
+                    }
+                }
+
+                // 更新头部信息
+                newHeader.IndexStartOffset = indexStartOffset;
+                newHeader.IndexUsedSize = indexBytes.Length;
+                newHeader.IndexSpaceSize = indexAllocationSize;
+                newHeader.IndexCount = newIndex.Count;
+
+                // 写入最终的头部信息
+                newHeader = newHeader.WriteDatabaseHeader(tempStream, _config);
+                tempStream.Flush();
+
+                // 验证头部信息
+                var readHeader = DatabaseHeader.ReadDatabaseHeader(tempStream, _config);
+                if (!readHeader.Equals(newHeader))
+                {
+                    throw new InvalidDataException("Database header mismatch after writing.");
+                }
+
+                tempStream.Close();
+
+                // 第三步：重新初始化所有信息
+                lock (_readDataLock)
+                {
+                    // 原子性替换文件
+                    PerformAtomicFileReplacement(tempPath, backupPath);
+
+                    // 重新打开文件流
+                    ReinitializeFileStream();
+
+                    // 更新内存数据结构
+                    _index.Clear();
+                    foreach (var kvp in newIndex)
+                    {
+                        _index[kvp.Key] = kvp.Value;
+                    }
+
+                    _databaseHeader = newHeader;
+                    _deletedIndex.Clear();
+                    _isChanged = false;
+
+                    // 清空内存缓存
+                    _valueCache.Clear();
+
+                    // 重新初始化 FastFileWriter
+                    ReinitializeFastFileWriter();
+                }
+
+                sw.Stop();
+
+                var newFileSize = new FileInfo(_filePath).Length;
+                Console.WriteLine($"Memory mode flush completed successfully in {sw.ElapsedMilliseconds} ms");
+                Console.WriteLine($"File size: {newFileSize:N0} bytes");
+                Console.WriteLine($"Persisted records: {newIndex.Count:N0}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Memory mode flush operation failed: {ex.Message}");
+                throw;
+            }
+            finally
+            {
+                // 清理临时文件
+                if (File.Exists(tempPath))
+                {
+                    try
+                    {
+                        File.Delete(tempPath);
+                    }
+                    catch { }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 执行原子性文件替换
+    /// </summary>
+    private void PerformAtomicFileReplacement(string tempPath, string backupPath)
+    {
+        // 关闭原文件流
+        _fileStream.Close();
+
+        try
+        {
+            // 删除备份文件（如果存在）
+            if (File.Exists(backupPath))
+            {
+                File.Delete(backupPath);
+            }
+
+            // 备份原文件
+            if (File.Exists(_filePath))
+            {
+                File.Move(_filePath, backupPath);
+            }
+
+            // 移动新文件到原位置
+            File.Move(tempPath, _filePath);
+        }
+        catch (Exception ex)
+        {
+            // 如果替换失败，恢复备份
+            if (File.Exists(backupPath))
+            {
+                if (File.Exists(_filePath))
+                {
+                    File.Delete(_filePath);
+                }
+                File.Move(backupPath, _filePath);
+            }
+
+            throw new InvalidOperationException($"Failed to replace database file during memory flush: {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>
+    /// 重新初始化文件流
+    /// </summary>
+    private void ReinitializeFileStream()
+    {
+        var fileOptions = FileOptions.RandomAccess;
+        var newFileStream = new FileStream(_filePath, FileMode.Open, FileAccess.ReadWrite,
+            FileShare.ReadWrite | FileShare.Delete, _config.FileStreamBufferSizeKB * 1024, fileOptions);
+
+        // 使用反射更新文件流引用
+        var fileStreamField = typeof(UltraKVEngine<TKey, TValue>)
+            .GetField("_fileStream", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        fileStreamField?.SetValue(this, newFileStream);
+    }
+
+    /// <summary>
+    /// 重新初始化 FastFileWriter
+    /// </summary>
+    private void ReinitializeFastFileWriter()
+    {
+        _fastFileWriter.Dispose();
+
+        var newFastFileWriter = new FastFileWriter(_fileStream, _config);
+        var fastFileWriterField = typeof(UltraKVEngine<TKey, TValue>)
+            .GetField("_fastFileWriter", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        fastFileWriterField?.SetValue(this, newFastFileWriter);
+    }
+
+    /// <summary>
+    /// 内存缓存项的内部类
+    /// </summary>
+    private class MemoryCacheItem<TK, TV> where TK : notnull
+    {
+        public TK Key { get; set; } = default!;
+        public TV Value { get; set; } = default!;
+        public byte[] KeyBytes { get; set; } = null!;
+        public byte[] ValueBytes { get; set; } = null!;
+        public long ValueHash { get; set; }
+        public long ValuePosition { get; set; }
+    }
+
+    /// <summary>
+    /// 强制刷新到磁盘
+    /// </summary>
+    public void Flush()
+    {
+        if (!_isChanged)
+        {
+            return;
+        }
+
+        if (IsMemoryModeEnabled)
+        {
+            FlushMemoryMode();
+        }
+        else
+        {
+            lock (_writeLock)
+            {
+                // 先刷新文件写入器
+                _fastFileWriter.Flush();
+
+                if (!_isChanged)
+                {
+                    return;
+                }
+
+                var useEncryption = _config.EncryptionType != EncryptionType.None;
+
+                var sw = new Stopwatch();
+                sw.Start();
+
+                // 数目较少，始终重建
+                if (_index.Count < 10 || _config.IndexRebuildThreshold <= 0)
+                {
                     AppendIndexToFile();
                 }
                 else
                 {
-                    // 判断 index 页面是否有剩余空间
-                    var appendIndexCount = _index.Count(c => c.Value.IsUpdated == 1 && c.Value.KeyPosition == -1);
-                    if (appendIndexCount > 0)
+                    // 总使用索引长度
+                    var useSize = _databaseHeader.IndexUsedSize;
+
+                    // 实际使用索引长度，排除新增
+                    var realSize =
+                         useEncryption ?
+                         _index.Where(c => c.Value.KeyPosition > 0).Sum(c => IndexEntryEncrypted.SIZE + IndexEntry.SIZE + c.Value.KeyLength + _config.EncryptionPaddingLength) :
+                         _index.Where(c => c.Value.KeyPosition > 0).Sum(c => IndexEntry.SIZE + c.Value.KeyLength);
+
+                    // 删除的索引长度（真实的删除长度，不是当前索引内的）
+                    var deletedSize = useSize - realSize;
+
+                    // 如果删除的索引长度超过阈值，即：空闲索引空间超过阈值，则重建索引
+                    if (deletedSize > 0 && realSize > 0
+                        && deletedSize > useSize * _config.IndexRebuildThreshold / 100)
                     {
-                        // 计算需要的空间
-                        var requiredSpace = _index.Where(c => c.Value.IsUpdated == 1 && c.Value.KeyPosition == -1)
-                            .Sum(kvp => IndexEntry.SIZE + kvp.Value.KeyLength);
-
-                        // 判断当前分配的 index 页面是否需要扩容
-                        // 计算当前剩余未分配的 index 页面的空间
-                        var remainingSpace = _databaseHeader.IndexSpaceSize - _databaseHeader.IndexUsedSize;
-                        if (remainingSpace < requiredSpace)
+                        // 重建索引
+                        AppendIndexToFile();
+                    }
+                    else
+                    {
+                        // 判断 index 页面是否有剩余空间
+                        var appendIndexCount = _index.Count(c => c.Value.IsUpdated == 1 && c.Value.KeyPosition == -1);
+                        if (appendIndexCount > 0)
                         {
-                            // 重建索引
-                            AppendIndexToFile();
-                        }
-                        else
-                        {
-                            var isRebuildIndex = false;
+                            // 计算需要的空间
+                            var requiredSpace = _index.Where(c => c.Value.IsUpdated == 1 && c.Value.KeyPosition == -1)
+                                .Sum(kvp => IndexEntry.SIZE + kvp.Value.KeyLength);
 
-                            // 将需要更新的索引条目写入索引区
-                            // 在索引区的最后一个未占用的位置开始写入
-                            var start = _databaseHeader.IndexUsedSize;
-                            _fileStream.Seek(start, SeekOrigin.Begin);
-
-                            foreach (var kvp in _index.Where(c => c.Value.IsUpdated == 1 && c.Value.KeyPosition == -1))
-                            {
-                                var keyBytes = _serializeHelper.SerializeKey(kvp.Key);
-                                var entryInfo = kvp.Value;
-                                entryInfo.IsUpdated = 0;
-
-                                // 更新索引条目的位置
-                                entryInfo.KeyPosition = start;
-
-                                if (useEncryption)
-                                {
-                                    // 加密写入
-                                    var entryBytes = SerializeEncryptedIndexEntry(kvp.Key, entryInfo);
-                                    _fileStream.Write(entryBytes);
-
-                                    // 更新索引使用大小
-                                    start += entryBytes.Length;
-                                    _databaseHeader.IndexUsedSize += entryBytes.Length;
-                                }
-                                else
-                                {
-                                    // 写入索引条目
-                                    var entry = entryInfo.ToEntry();
-                                    var entryBytes = new byte[IndexEntry.SIZE];
-                                    unsafe
-                                    {
-                                        fixed (byte* ptr = entryBytes)
-                                        {
-                                            *(IndexEntry*)ptr = entry;
-                                        }
-                                    }
-                                    _fileStream.Write(entryBytes);
-                                    _fileStream.Write(keyBytes);
-
-                                    start += IndexEntry.SIZE + keyBytes.Length;
-                                    _databaseHeader.IndexUsedSize += IndexEntry.SIZE + keyBytes.Length;
-                                }
-
-                                // 更新内存索引
-                                _index[kvp.Key] = entryInfo;
-
-                                // 分配超出
-                                if (_databaseHeader.IndexUsedSize > _databaseHeader.IndexSpaceSize)
-                                {
-                                    isRebuildIndex = true;
-                                    break;
-                                }
-                            }
-
-                            if (isRebuildIndex)
+                            // 判断当前分配的 index 页面是否需要扩容
+                            // 计算当前剩余未分配的 index 页面的空间
+                            var remainingSpace = _databaseHeader.IndexSpaceSize - _databaseHeader.IndexUsedSize;
+                            if (remainingSpace < requiredSpace)
                             {
                                 // 重建索引
                                 AppendIndexToFile();
                             }
+                            else
+                            {
+                                var isRebuildIndex = false;
+
+                                // 将需要更新的索引条目写入索引区
+                                // 在索引区的最后一个未占用的位置开始写入
+                                var start = _databaseHeader.IndexUsedSize;
+                                _fileStream.Seek(start, SeekOrigin.Begin);
+
+                                foreach (var kvp in _index.Where(c => c.Value.IsUpdated == 1 && c.Value.KeyPosition == -1))
+                                {
+                                    var keyBytes = _serializeHelper.SerializeKey(kvp.Key);
+                                    var entryInfo = kvp.Value;
+                                    entryInfo.IsUpdated = 0;
+
+                                    // 更新索引条目的位置
+                                    entryInfo.KeyPosition = start;
+
+                                    if (useEncryption)
+                                    {
+                                        // 加密写入
+                                        var entryBytes = SerializeEncryptedIndexEntry(kvp.Key, entryInfo);
+                                        _fileStream.Write(entryBytes);
+
+                                        // 更新索引使用大小
+                                        start += entryBytes.Length;
+                                        _databaseHeader.IndexUsedSize += entryBytes.Length;
+                                    }
+                                    else
+                                    {
+                                        // 写入索引条目
+                                        var entry = entryInfo.ToEntry();
+                                        var entryBytes = new byte[IndexEntry.SIZE];
+                                        unsafe
+                                        {
+                                            fixed (byte* ptr = entryBytes)
+                                            {
+                                                *(IndexEntry*)ptr = entry;
+                                            }
+                                        }
+                                        _fileStream.Write(entryBytes);
+                                        _fileStream.Write(keyBytes);
+
+                                        start += IndexEntry.SIZE + keyBytes.Length;
+                                        _databaseHeader.IndexUsedSize += IndexEntry.SIZE + keyBytes.Length;
+                                    }
+
+                                    // 更新内存索引
+                                    _index[kvp.Key] = entryInfo;
+
+                                    // 分配超出
+                                    if (_databaseHeader.IndexUsedSize > _databaseHeader.IndexSpaceSize)
+                                    {
+                                        isRebuildIndex = true;
+                                        break;
+                                    }
+                                }
+
+                                if (isRebuildIndex)
+                                {
+                                    // 重建索引
+                                    AppendIndexToFile();
+                                }
+                            }
+                        }
+
+                        // 更新需要更新的索引条目
+                        foreach (var kvp in _index.Where(c => c.Value.IsUpdated == 1 && c.Value.KeyPosition > 0))
+                        {
+                            if (kvp.Value.IsUpdated == 0)
+                                continue;
+                            var indexEntry = kvp.Value;
+                            indexEntry.IsUpdated = 0;
+
+                            if (useEncryption)
+                            {
+                                // 加密写入
+                                var entryBytes = SerializeEncryptedIndexEntry(kvp.Key, indexEntry);
+                                _fileStream.Seek(indexEntry.KeyPosition, SeekOrigin.Begin);
+                                _fileStream.Write(entryBytes);
+                            }
+                            else
+                            {
+                                // 注意：重新序列化，长度是不变的
+                                var keyBytes = _serializeHelper.SerializeKey(kvp.Key);
+
+                                // 写入索引条目
+                                var entry = indexEntry.ToEntry();
+                                var entryBytes = new byte[IndexEntry.SIZE];
+                                unsafe
+                                {
+                                    fixed (byte* ptr = entryBytes)
+                                    {
+                                        *(IndexEntry*)ptr = entry;
+                                    }
+                                }
+                                _fileStream.Seek(indexEntry.KeyPosition, SeekOrigin.Begin);
+                                _fileStream.Write(entryBytes);
+                                _fileStream.Write(keyBytes);
+                            }
                         }
                     }
 
-                    // 更新需要更新的索引条目
-                    foreach (var kvp in _index.Where(c => c.Value.IsUpdated == 1 && c.Value.KeyPosition > 0))
+                    // 如果有删除的索引，只更新索引条目标识即可
+                    if (_deletedIndex.Count > 0)
                     {
-                        if (kvp.Value.IsUpdated == 0)
-                            continue;
-                        var indexEntry = kvp.Value;
-                        indexEntry.IsUpdated = 0;
+                        // 将删除的索引条目写入索引区
+                        // 只更新有持久化话的索引
+                        foreach (var kvp in _deletedIndex.Where(c => c.Value.KeyPosition > 0))
+                        {
+                            var entryInfo = kvp.Value;
 
-                        if (useEncryption)
-                        {
-                            // 加密写入
-                            var entryBytes = SerializeEncryptedIndexEntry(kvp.Key, indexEntry);
-                            _fileStream.Seek(indexEntry.KeyPosition, SeekOrigin.Begin);
-                            _fileStream.Write(entryBytes);
-                        }
-                        else
-                        {
-                            // 注意：重新序列化，长度是不变的
-                            var keyBytes = _serializeHelper.SerializeKey(kvp.Key);
+                            // 写入删除标记
+                            entryInfo.IsDeleted = 1;
 
                             // 写入索引条目
-                            var entry = indexEntry.ToEntry();
-                            var entryBytes = new byte[IndexEntry.SIZE];
-                            unsafe
+                            if (useEncryption)
                             {
-                                fixed (byte* ptr = entryBytes)
+                                // 加密写入
+                                //var entryBytes = SerializeEncryptedIndexEntry(kvp.Key, entryInfo);
+                                //_fileStream.Seek(entryInfo.KeyPosition, SeekOrigin.Begin);
+                                //_fileStream.Write(entryBytes);
+
+                                // 删除标记
+                                // 只需要写头文件即可，不需要计算，因为数据不变，只是头文件标记删除
+                                var entry = entryInfo.ToDeletedEntry();
+                                var entryBytes = new byte[IndexEntryEncrypted.SIZE];
+                                unsafe
                                 {
-                                    *(IndexEntry*)ptr = entry;
+                                    fixed (byte* ptr = entryBytes)
+                                    {
+                                        *(IndexEntryEncrypted*)ptr = entry;
+                                    }
                                 }
+                                _fileStream.Seek(entryInfo.KeyPosition, SeekOrigin.Begin);
+                                _fileStream.Write(entryBytes);
                             }
-                            _fileStream.Seek(indexEntry.KeyPosition, SeekOrigin.Begin);
-                            _fileStream.Write(entryBytes);
-                            _fileStream.Write(keyBytes);
+                            else
+                            {
+                                // 明文写入
+                                var entry = entryInfo.ToEntry();
+                                var entryBytes = new byte[IndexEntry.SIZE];
+                                unsafe
+                                {
+                                    fixed (byte* ptr = entryBytes)
+                                    {
+                                        *(IndexEntry*)ptr = entry;
+                                    }
+                                }
+                                _fileStream.Seek(entryInfo.KeyPosition, SeekOrigin.Begin);
+                                _fileStream.Write(entryBytes);
+                            }
                         }
                     }
                 }
 
-                // 如果有删除的索引，只更新索引条目标识即可
-                if (_deletedIndex.Count > 0)
+                // 写入统计信息
+                _databaseHeader.IndexCount = _index.Count;
+
+                WriteDatabaseHeader();
+
+                _fileStream.Flush();
+
+                // 重置状态
+                _isChanged = false;
+
+                // 重置
+                _deletedIndex.Clear();
+
+                // 检查是否需要压实
+                if (ShouldCompact())
                 {
-                    // 将删除的索引条目写入索引区
-                    // 只更新有持久化话的索引
-                    foreach (var kvp in _deletedIndex.Where(c => c.Value.KeyPosition > 0))
-                    {
-                        var entryInfo = kvp.Value;
-
-                        // 写入删除标记
-                        entryInfo.IsDeleted = 1;
-
-                        // 写入索引条目
-                        if (useEncryption)
-                        {
-                            // 加密写入
-                            //var entryBytes = SerializeEncryptedIndexEntry(kvp.Key, entryInfo);
-                            //_fileStream.Seek(entryInfo.KeyPosition, SeekOrigin.Begin);
-                            //_fileStream.Write(entryBytes);
-
-                            // 删除标记
-                            // 只需要写头文件即可，不需要计算，因为数据不变，只是头文件标记删除
-                            var entry = entryInfo.ToDeletedEntry();
-                            var entryBytes = new byte[IndexEntryEncrypted.SIZE];
-                            unsafe
-                            {
-                                fixed (byte* ptr = entryBytes)
-                                {
-                                    *(IndexEntryEncrypted*)ptr = entry;
-                                }
-                            }
-                            _fileStream.Seek(entryInfo.KeyPosition, SeekOrigin.Begin);
-                            _fileStream.Write(entryBytes);
-                        }
-                        else
-                        {
-                            // 明文写入
-                            var entry = entryInfo.ToEntry();
-                            var entryBytes = new byte[IndexEntry.SIZE];
-                            unsafe
-                            {
-                                fixed (byte* ptr = entryBytes)
-                                {
-                                    *(IndexEntry*)ptr = entry;
-                                }
-                            }
-                            _fileStream.Seek(entryInfo.KeyPosition, SeekOrigin.Begin);
-                            _fileStream.Write(entryBytes);
-                        }
-                    }
+                    PerformCompact();
                 }
+
+                sw.Stop();
+
+                Console.WriteLine($"Flush completed in {sw.ElapsedMilliseconds} ms. Total records: {_index.Count}, Total file size: {_fileStream.Length} bytes");
             }
-
-            // 写入统计信息
-            _databaseHeader.IndexCount = _index.Count;
-
-            WriteDatabaseHeader();
-
-            _fileStream.Flush();
-
-            // 重置状态
-            _isChanged = false;
-
-            // 重置
-            _deletedIndex.Clear();
-
-            // 检查是否需要压实
-            if (ShouldCompact())
-            {
-                PerformCompact();
-            }
-
-            sw.Stop();
-
-            Console.WriteLine($"Flush completed in {sw.ElapsedMilliseconds} ms. Total records: {_index.Count}, Total file size: {_fileStream.Length} bytes");
         }
     }
 
@@ -1385,7 +1777,7 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
             }
             catch { }
 
-            _memoryCache?.Dispose();
+            _valueCache?.Dispose();
             _dataProcessor?.Dispose();
             _fileStream?.Dispose();
 
@@ -1657,41 +2049,6 @@ public class UltraKVEngine<TKey, TValue> : IDisposable where TKey : notnull
         }
 
         return SetBatch(dictionary, skipDuplicates);
-    }
-
-    /// <summary>
-    /// 获取内存缓存统计信息
-    /// </summary>
-    public MemoryCacheStats? GetMemoryCacheStats()
-    {
-        return IsMemoryModeEnabled ? _memoryCache!.GetStats() : null;
-    }
-
-    // 辅助方法：从磁盘加载单个值
-    private TValue? LoadFromDisk(TKey key)
-    {
-        // 使用现有的磁盘读取逻辑
-        return GetFromDisk(key);
-    }
-
-    // 重构现有方法以支持内存模式
-    private TValue? GetFromDisk(TKey key)
-    {
-        // 现有的磁盘读取逻辑
-        if (!_index.TryGetValue(key, out var entryInfo))
-            return default;
-
-        return ReadValue(key, entryInfo);
-    }
-
-    private bool RemoveFromDisk(TKey key)
-    {
-        // 现有的磁盘删除逻辑
-        if (!_index.TryRemove(key, out var entryInfo))
-            return false;
-
-        _deletedIndex[key] = entryInfo;
-        return true;
     }
 
     /// <summary>

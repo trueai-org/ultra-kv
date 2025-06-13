@@ -7,23 +7,20 @@ public class UltraKVConfig
 {
     /// <summary>
     /// 是否开启内存模式，开启内存模式时，读/写将会直接从内存中获取数据，而不是从磁盘读取，数据将全部加载到内存中
+    /// 当 Flush 时才会将数据写入磁盘
+    /// 提示：内存模式没有值过期时间，数据将一直保留在内存中，直到数据库关闭或重启
     /// </summary>
     public bool MemoryModeEnabled { get; set; } = false;
 
     /// <summary>
-    /// 内存模式内存最大限制 MB
+    /// 开启读取/值缓存，开启后，读取数据时会先从内存缓存中获取，如果没有则从磁盘加载
     /// </summary>
-    public int MemoryModeMaxSizeMB { get; set; } = 1024;
+    public bool ValueCacheEnabled { get; set; } = false;
 
     /// <summary>
-    /// 内存模式默认缓存时间，单位：秒
+    /// 读取/值缓存默认缓存时间，单位：秒
     /// </summary>
-    public int MemoryModeDefaultCacheTimeSeconds { get; set; } = 3600;
-
-    /// <summary>
-    /// 内存模式是否启用懒加载
-    /// </summary>
-    public bool MemoryModeLazyLoadEnabled { get; set; } = false;
+    public int ValueCacheSeconds { get; set; } = 3600;
 
     /// <summary>
     /// 是否开启更新验证，每次更新完成后校验值是否正确，默认 false，一般开发时使用
@@ -221,8 +218,8 @@ public class UltraKVConfig
 
     public override string ToString()
     {
-        return $"UltraKVConfig [MemoryModeEnabled={MemoryModeEnabled}, MemoryModeMaxSizeMB={MemoryModeMaxSizeMB}, " +
-               $"MemoryModeDefaultCacheTimeSeconds={MemoryModeDefaultCacheTimeSeconds}, UpdateValidationEnabled={UpdateValidationEnabled}, " +
+        return $"UltraKVConfig [MemoryModeEnabled={MemoryModeEnabled}, " +
+               $"ValueCacheSeconds={ValueCacheSeconds}, UpdateValidationEnabled={UpdateValidationEnabled}, " +
                $"MaxKeyLength={MaxKeyLength}, CompressionType={CompressionType}, EncryptionType={EncryptionType}, " +
                $"HashType={HashType}, EncryptionKey={(string.IsNullOrEmpty(EncryptionKey) ? "None" : "Set")}, " +
                $"FileStreamBufferSizeKB={FileStreamBufferSizeKB}, AutoCompactEnabled={AutoCompactEnabled}, " +
