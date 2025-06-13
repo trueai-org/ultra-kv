@@ -38,6 +38,8 @@ UltraKV proves that:
 
 ## Installation
 
+[More Document / WIKI](https://github.com/trueai-org/ultra-kv/wiki)
+
 ```bash
 dotnet add package UltraKV
 
