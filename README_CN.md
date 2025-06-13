@@ -37,7 +37,7 @@ UltraKV 证明了：
 > 
 ## 安装使用
 
-[更多说明 / WIKI](https://github.com/trueai-org/ultra-kv/wiki)
+[更多说明 / WIKI](https://github.com/trueai-org/ultra-kv/wiki/Home%E2%80%90zh)
 
 ```bash
 dotnet add package UltraKV
