@@ -28,6 +28,11 @@
 
 		<!-- Logo 配置 -->
 		<PackageIcon>icon.png</PackageIcon>
+
+		<!-- 包含源码和符号 -->
+		<IncludeSymbols>true</IncludeSymbols>
+		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
+		<IncludeSource>true</IncludeSource>
 	</PropertyGroup>
 
 	<ItemGroup>
