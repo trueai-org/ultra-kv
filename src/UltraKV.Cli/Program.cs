@@ -136,7 +136,6 @@ namespace UltraKV.Cli
                 }
                 engine.Flush();
 
-
                 var engine3 = manager.GetEngine("benchmark3", new UltraKVConfig()
                 {
                     //EnableWriteBuffer = true,
@@ -536,7 +535,6 @@ namespace UltraKV.Cli
 
             using var engine = new UltraKVEngine<string, string>(Path.Combine(dataDir, "test.db"), config);
 
-
             for (int j = 0; j < 10; j++)
             {
                 var sw = new Stopwatch();
@@ -558,14 +556,11 @@ namespace UltraKV.Cli
                     //}
                 }
 
-
-
                 sw.Stop();
 
                 engine.Flush();
                 engine.Clear();
                 engine.Flush();
-
 
                 //engine.Clear();
 
@@ -600,7 +595,6 @@ namespace UltraKV.Cli
             //// 对索引完全压实
             //engine.Compact(true);
 
-
             //var x = engine.Get("k0"); // 触发索引创建
 
             //// 更新
@@ -617,7 +611,6 @@ namespace UltraKV.Cli
             // 添加数据 - 自动更新索引
             //engine.Put("user:1001", new string('x', 1024 * 1));
 
-
             //engine.Dispose();
 
             //x51 = engine.Get("user:1001");
@@ -625,7 +618,6 @@ namespace UltraKV.Cli
             //engine.Flush();
 
             //x51 = engine.Get("user:1001");
-
 
             Console.ReadKey();
 
@@ -654,6 +646,7 @@ namespace UltraKV.Cli
             // 刷新保存索引
             engine.Flush();
         }
+
         /// <summary>
         /// 简化的内存模式性能测试 - 执行10次取平均值
         /// </summary>
