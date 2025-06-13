@@ -23,7 +23,7 @@
 
 </div>
 
-One of the most remarkable aspects of **UltraKV** is achieving enterprise-grade database performance with an incredibly compact codebase. The entire **UltraKV** engine core is implemented in **less than 1,000 lines of C# code**, demonstrating the power of focused, efficient design.
+One of the most remarkable aspects of **UltraKV** is achieving enterprise-grade database performance with an incredibly compact codebase. The entire **UltraKV** engine core is implemented in **less than 1,000 lines of C# code**, demonstrating the power of focused, efficient design. Database initializing only requires **64 bytes**.
 
 ### 💡 Philosophy: "Perfect is the Enemy of Good"
 
