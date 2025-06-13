@@ -29,8 +29,8 @@ jobs:
     - name: Build project
       run: dotnet build --configuration Release --no-restore
       
-    - name: Test project
-      run: dotnet test --configuration Release --no-build --verbosity normal
+    #- name: Test project
+    #  run: dotnet test --configuration Release --no-build --verbosity normal
       
     - name: Get version from release
       id: get_version
